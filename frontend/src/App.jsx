@@ -1,10 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { MAGNITUDES, FORMULAS, textoFormula, calcularOhm, calcularEquivalente } from './ohm.js'
-import { simular, formatear } from './simulador.js'
+import { simular, formatear, verificar, textoCondicion, MEDIBLES, PASO } from './simulador.js'
 import { api } from './api.js'
 import Acceso from './Acceso.jsx'
+import Ejercicios from './Ejercicios.jsx'
 import {
   IconoResistencia,
+  IconoPotenciometro,
+  IconoCapacitor,
   IconoCable,
   IconoFuente,
   IconoInterruptor,
@@ -24,6 +27,7 @@ import nombre from './assets/volta-nombre.png'
 // los terminales), la letra con la que empieza su nombre y, si tiene un valor editable, su unidad y valor inicial
 const CATALOGO = {
   resistencia: { nombre: 'Resistencia', icono: IconoResistencia, ancho: 40, prefijo: 'R', unidad: 'Ω', valorInicial: 100 },
+  potenciometro: { nombre: 'Potenciómetro', icono: IconoPotenciometro, ancho: 40, prefijo: 'RV', unidad: 'Ω', valorInicial: 1000 },
   fuente: { nombre: 'Fuente (V)', icono: IconoFuente, ancho: 28, prefijo: 'V', unidad: 'V', valorInicial: 12 },
   interruptor: { nombre: 'Interruptor', icono: IconoInterruptor, ancho: 28, prefijo: 'S' },
   pulsador: { nombre: 'Pulsador', icono: IconoPulsador, ancho: 28, prefijo: 'P' },
@@ -31,12 +35,15 @@ const CATALOGO = {
   led: { nombre: 'LED', icono: IconoLed, ancho: 32, prefijo: 'LED' },
   diodo: { nombre: 'Diodo', icono: IconoDiodo, ancho: 32, prefijo: 'D' },
   motor: { nombre: 'Motor', icono: IconoMotor, ancho: 32, prefijo: 'M', unidad: 'Ω', valorInicial: 10 },
+  capacitor: { nombre: 'Capacitor', icono: IconoCapacitor, ancho: 28, prefijo: 'C', unidad: 'µF', valorInicial: 1000 },
   fusible: { nombre: 'Fusible', icono: IconoFusible, ancho: 32, prefijo: 'F', unidad: 'A', valorInicial: 1 },
   voltimetro: { nombre: 'Voltímetro', icono: IconoVoltimetro, ancho: 32, prefijo: 'VM' },
   amperimetro: { nombre: 'Amperímetro', icono: IconoAmperimetro, ancho: 32, prefijo: 'AM' }
 }
 
-function PanelComponentes() {
+const COLOR_CABLE = '#5A5555'
+
+function PanelComponentes({ onAgregar }) {
   const vistasPrevias = useRef({})
 
   const componentes = [
@@ -60,7 +67,12 @@ function PanelComponentes() {
           key={c.id}
           className="componente-item"
           draggable
+          title="Arrastralo al área de trabajo, o tocalo para agregarlo"
           onDragStart={(e) => onDragStart(e, c.id)}
+          role="button"
+          tabIndex={0}
+          onClick={() => onAgregar(c.id)}
+          onKeyDown={(e) => e.key === 'Enter' && onAgregar(c.id)}
         >
           {c.icono}
           {c.nombre}
@@ -93,14 +105,14 @@ function PuntasCable({ cable, onMoverExtremo }) {
 
   return (
     <g>
-      <circle cx={cable.x1} cy={cable.y1} r="6" fill={cable.color} className="extremo-cable" onMouseDown={iniciarArrastreExtremo(0)} />
-      <circle cx={cable.x2} cy={cable.y2} r="6" fill={cable.color} className="extremo-cable" onMouseDown={iniciarArrastreExtremo(1)} />
+      <circle cx={cable.x1} cy={cable.y1} r="6" fill={cable.color} className="extremo-cable" onPointerDown={iniciarArrastreExtremo(0)} />
+      <circle cx={cable.x2} cy={cable.y2} r="6" fill={cable.color} className="extremo-cable" onPointerDown={iniciarArrastreExtremo(1)} />
     </g>
   )
 }
 
-function ComponenteCable({ cable, seleccionado, conError, onMover, onSeleccionar }) {
-  const onMouseDownLinea = (e) => {
+function ComponenteCable({ cable, seleccionado, conError, corriente = 0, onMover, onSeleccionar }) {
+  const onPointerDownLinea = (e) => {
     e.stopPropagation()
     if (seleccionado) {
       onMover(cable.id, e)
@@ -108,20 +120,31 @@ function ComponenteCable({ cable, seleccionado, conError, onMover, onSeleccionar
       onSeleccionar()
     }
   }
+  const puntas = { x1: cable.x1, y1: cable.y1, x2: cable.x2, y2: cable.y2 }
 
   return (
-    <line
-      x1={cable.x1}
-      y1={cable.y1}
-      x2={cable.x2}
-      y2={cable.y2}
-      stroke={cable.color}
-      strokeWidth={seleccionado ? 5 : 3}
-      strokeDasharray={seleccionado ? '6 4' : 'none'}
-      className={conError ? 'linea-cable con-error' : 'linea-cable'}
-      onClick={(e) => e.stopPropagation()}
-      onMouseDown={onMouseDownLinea}
-    />
+    <g onPointerDown={onPointerDownLinea}>
+      <line
+        {...puntas}
+        stroke={cable.color}
+        strokeWidth={seleccionado ? 5 : 3}
+        strokeDasharray={seleccionado ? '6 4' : 'none'}
+        className={conError ? 'linea-cable con-error' : 'linea-cable'}
+      />
+      {/* Rayitas que avanzan en el sentido de la corriente (de + a −), más rápido cuanta más circula */}
+      {Math.abs(corriente) > 1e-4 && (
+        <line
+          {...puntas}
+          className="corriente"
+          style={{
+            animationDuration: `${Math.min(2, Math.max(0.2, 0.1 / Math.abs(corriente)))}s`,
+            animationDirection: corriente < 0 ? 'reverse' : 'normal'
+          }}
+        />
+      )}
+      {/* Franja invisible más ancha que el cable, para poder agarrarlo sin tanta puntería */}
+      <line {...puntas} className="zona-toque" />
+    </g>
   )
 }
 
@@ -135,10 +158,10 @@ function siguienteNombre(componentes, tipo) {
   return prefijo + (Math.max(0, ...usados) + 1)
 }
 
-// Guarda el circuito y las notas en el servidor un segundo después del último cambio
+// Guarda el circuito abierto (nombre, circuito y notas) en el servidor un segundo después del último cambio
 // (así no se manda un pedido en cada movimiento del mouse). Devuelve 'guardado', 'guardando' o 'error'.
-function useAutoguardado(circuito, notas) {
-  const actual = JSON.stringify({ circuito, notas })
+function useAutoguardado(id, contenido) {
+  const actual = JSON.stringify(contenido)
   const [guardado, setGuardado] = useState(actual) // lo último que el servidor confirmó
   const [fallos, setFallos] = useState(0)
   const fila = useRef(Promise.resolve())
@@ -149,7 +172,7 @@ function useAutoguardado(circuito, notas) {
     const espera = setTimeout(() => {
       // Los envíos van en fila: uno viejo que tarde en llegar nunca pisa a uno más nuevo
       fila.current = fila.current
-        .then(() => api('PUT', '/api/trabajo', actual))
+        .then(() => api('PUT', `/api/circuitos/${id}`, actual))
         .then(() => {
           setGuardado(actual)
           setFallos(0)
@@ -157,7 +180,7 @@ function useAutoguardado(circuito, notas) {
         .catch(() => setFallos((n) => n + 1))
     }, fallos > 0 ? 5000 : 1000)
     return () => clearTimeout(espera)
-  }, [actual, guardado, fallos])
+  }, [id, actual, guardado, fallos])
 
   // Si quedan cambios sin guardar, el navegador pregunta antes de cerrar la pestaña
   useEffect(() => {
@@ -169,6 +192,38 @@ function useAutoguardado(circuito, notas) {
 
   if (fallos > 0) return 'error'
   return actual === guardado ? 'guardado' : 'guardando'
+}
+
+// Estado con historial para deshacer y rehacer. Los cambios muy seguidos (arrastrar, escribir un valor)
+// cuentan como un solo paso; agregar o quitar un elemento siempre es un paso aparte.
+// ponytail: agrupa por tiempo (cambios a menos de 500 ms); marcar el inicio de cada gesto si hiciera falta exactitud
+function useHistorial(inicial) {
+  const [h, setH] = useState({ pasado: [], presente: inicial, futuro: [] })
+  const ultimoCambio = useRef(0)
+
+  const cambiar = (nuevo) => {
+    const seguido = Date.now() - ultimoCambio.current < 500
+    ultimoCambio.current = Date.now()
+    setH((h) => {
+      const presente = typeof nuevo === 'function' ? nuevo(h.presente) : nuevo
+      const mismoPaso = seguido && presente.length === h.presente.length
+      return { pasado: mismoPaso ? h.pasado : [...h.pasado.slice(-99), h.presente], presente, futuro: [] }
+    })
+  }
+  const deshacer = () => {
+    ultimoCambio.current = 0
+    setH((h) =>
+      h.pasado.length === 0 ? h : { pasado: h.pasado.slice(0, -1), presente: h.pasado.at(-1), futuro: [h.presente, ...h.futuro] }
+    )
+  }
+  const rehacer = () => {
+    ultimoCambio.current = 0
+    setH((h) =>
+      h.futuro.length === 0 ? h : { pasado: [...h.pasado, h.presente], presente: h.futuro[0], futuro: h.futuro.slice(1) }
+    )
+  }
+
+  return [h.presente, cambiar, { deshacer, rehacer, puedeDeshacer: h.pasado.length > 0, puedeRehacer: h.futuro.length > 0 }]
 }
 
 function obtenerTerminales(c) {
@@ -292,31 +347,53 @@ function armarRed(componentes, pulsadoId) {
   }
 }
 
-// Escucha el mouse en toda la ventana hasta que se suelta el botón
+// Escucha el puntero (mouse o dedo) en toda la ventana hasta que se suelta
 function arrastrar(mover) {
   const soltar = () => {
-    window.removeEventListener('mousemove', mover)
-    window.removeEventListener('mouseup', soltar)
+    window.removeEventListener('pointermove', mover)
+    window.removeEventListener('pointerup', soltar)
+    window.removeEventListener('pointercancel', soltar)
   }
-  window.addEventListener('mousemove', mover)
-  window.addEventListener('mouseup', soltar)
+  window.addEventListener('pointermove', mover)
+  window.addEventListener('pointerup', soltar)
+  window.addEventListener('pointercancel', soltar)
 }
 
-
+// Componente nuevo del tipo pedido, ubicado en (x, y). `existentes` sirve para elegirle un nombre que no se repita
+function crearComponente(tipo, x, y, existentes, color) {
+  if (tipo === 'cable') return { id: crypto.randomUUID(), tipo, x1: x, y1: y, x2: x + 80, y2: y, color }
+  return {
+    id: crypto.randomUUID(),
+    tipo,
+    x,
+    y,
+    valor: CATALOGO[tipo].valorInicial,
+    nombre: siguienteNombre(existentes, tipo),
+    rotacion: 0
+  }
+}
 
 // Lo que se lee debajo del componente: su valor, o la medición si es un instrumento y se está simulando
 function textoEtiqueta(c, estado) {
   if (c.tipo === 'voltimetro') return estado ? formatear(estado.tension, 'V') : ''
   if (c.tipo === 'amperimetro') return estado ? formatear(estado.corriente, 'A') : ''
+  if (c.tipo === 'potenciometro') return `${Math.round((c.posicion ?? 0.5) * 100)}% de ${c.valor} Ω`
   const { unidad } = CATALOGO[c.tipo]
-  return unidad ? `${c.valor} ${unidad}` : ''
+  const valor = unidad ? `${c.valor} ${unidad}` : ''
+  // El capacitor muestra además a cuánto se cargó
+  return c.tipo === 'capacitor' && estado ? `${valor} · ${formatear(estado.tension, 'V')}` : valor
 }
 
-function Workspace({ componentesColocados, setComponentesColocados }) {
-  const [colorSeleccionado, setColorSeleccionado] = useState('#5A5555')
+// Ancho y alto (en px) que entran en una hoja A4 apaisada con los márgenes de impresión de index.css
+const HOJA = { ancho: 1030, alto: 600 }
+
+function Workspace({ componentesColocados, setComponentesColocados, historial }) {
+  const [colorSeleccionado, setColorSeleccionado] = useState(COLOR_CABLE)
   const [seleccionadoId, setSeleccionadoId] = useState(null)
   const [simulando, setSimulando] = useState(false)
   const [pulsadoId, setPulsadoId] = useState(null)
+  // Tensión a la que llegó cada capacitor en el paso anterior de la simulación ({ [id]: volts })
+  const [cargas, setCargas] = useState({})
   const contenedorRef = useRef(null)
 
   const posicionMouse = (e) => {
@@ -331,26 +408,8 @@ function Workspace({ componentesColocados, setComponentesColocados }) {
 
     const { x, y } = posicionMouse(e)
 
-    if (tipo === 'cable') {
-      setComponentesColocados((prev) => [
-        ...prev,
-        { id: crypto.randomUUID(), tipo, x1: x, y1: y, x2: x + 80, y2: y, color: colorSeleccionado }
-      ])
-      } else {
-        setComponentesColocados((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            tipo,
-            x,
-            y,
-            valor: CATALOGO[tipo].valorInicial,
-            nombre: siguienteNombre(prev, tipo),
-            rotacion: 0
-          }
-        ])
-}
-  } 
+    setComponentesColocados((prev) => [...prev, crearComponente(tipo, x, y, prev, colorSeleccionado)])
+  }
 
   // Todos los terminales del área de trabajo, menos los que descarte excluir(componente, indice)
   const listarTerminales = (excluir) =>
@@ -401,11 +460,17 @@ function Workspace({ componentesColocados, setComponentesColocados }) {
     )
   }
 
-const cambiarValorSeleccionado = (valor) => {
-  setComponentesColocados((prev) =>
-    prev.map((c) => (c.id === seleccionadoId ? { ...c, valor: Number(valor) || 0 } : c))
-  )
-}
+  const cambiarValorSeleccionado = (valor) => {
+    setComponentesColocados((prev) =>
+      prev.map((c) => (c.id === seleccionadoId ? { ...c, valor: Number(valor) || 0 } : c))
+    )
+  }
+
+  const cambiarPosicionSeleccionado = (posicion) => {
+    setComponentesColocados((prev) =>
+      prev.map((c) => (c.id === seleccionadoId ? { ...c, posicion: Number(posicion) } : c))
+    )
+  }
 
   const cambiarNombreSeleccionado = (nombre) => {
     setComponentesColocados((prev) =>
@@ -419,8 +484,8 @@ const cambiarValorSeleccionado = (valor) => {
     )
   }
 
+  // No pide confirmación: se recupera con Deshacer
   const borrarCircuito = () => {
-    if (!window.confirm('¿Borrar todo el circuito? No se puede deshacer.')) return
     setComponentesColocados([])
     setSeleccionadoId(null)
   }
@@ -430,13 +495,19 @@ const cambiarValorSeleccionado = (valor) => {
     setSeleccionadoId(null)
   }
 
-  const onMouseDownComponente = (e, c) => {
+  // Al arrancar o detener la simulación, los capacitores vuelven a estar descargados
+  const alternarSimulacion = () => {
+    setSimulando(!simulando)
+    setCargas({})
+  }
+
+  const onPointerDownComponente = (e, c) => {
     e.stopPropagation()
     // Mientras se simula, el interruptor y el pulsador se accionan con el mouse en vez de seleccionarse
     if (simulando && c.tipo === 'interruptor') return alternarInterruptor(c.id)
     if (simulando && c.tipo === 'pulsador') {
       setPulsadoId(c.id)
-      window.addEventListener('mouseup', () => setPulsadoId(null), { once: true })
+      window.addEventListener('pointerup', () => setPulsadoId(null), { once: true })
       return
     }
     const yaEstabaSeleccionado = c.id === seleccionadoId
@@ -457,17 +528,59 @@ const cambiarValorSeleccionado = (valor) => {
 
   // La simulación se recalcula en cada render: si movés un cable o cambiás un valor, se actualiza al instante.
   // ponytail: un LED quemado "se arregla" apenas se corrige el circuito; guardar los quemados en un estado si hiciera falta
-  const simulacion = simulando ? simular(armarRed(componentesColocados, pulsadoId)) : null
+  const simulacion = simulando ? simular(armarRed(componentesColocados, pulsadoId), cargas) : null
   // Lo que se marca en rojo: lo que forma el cortocircuito y lo que se quemó
   const resaltados = new Set(
     simulacion ? [...(simulacion.cortocircuito?.ids ?? []), ...simulacion.avisos.flatMap((a) => a.ids)] : []
   )
 
+  // Con capacitores la simulación avanza en el tiempo: cada PASO se guarda la tensión a la que llegó cada uno
+  useEffect(() => {
+    const capacitores = componentesColocados.filter((c) => c.tipo === 'capacitor')
+    if (!simulando || capacitores.length === 0) return
+    const reloj = setInterval(() => {
+      setCargas((prev) => {
+        const { estados } = simular(armarRed(componentesColocados, pulsadoId), prev)
+        return Object.fromEntries(capacitores.map((c) => [c.id, estados[c.id]?.tension ?? prev[c.id] ?? 0]))
+      })
+    }, PASO * 1000)
+    return () => clearInterval(reloj)
+  }, [simulando, componentesColocados, pulsadoId])
+
+  // Atajos de teclado. No se usan mientras se escribe en un campo, para no pisar los del propio campo
+  useEffect(() => {
+    const onTecla = (e) => {
+      if (e.target.closest?.('input, textarea, select')) return
+      const tecla = e.key.toLowerCase()
+      if ((e.ctrlKey || e.metaKey) && (tecla === 'z' || tecla === 'y')) {
+        e.preventDefault()
+        if (tecla === 'y' || e.shiftKey) historial.rehacer()
+        else historial.deshacer()
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && seleccionado) {
+        eliminarSeleccionado()
+      }
+    }
+    window.addEventListener('keydown', onTecla)
+    return () => window.removeEventListener('keydown', onTecla)
+  })
+
+  // Lo que ocupa el circuito, para que al imprimir entre completo en la hoja (ver @media print en index.css)
+  const puntos = componentesColocados.flatMap(obtenerTerminales)
+  const anchoCircuito = Math.max(300, ...puntos.map((p) => p.x)) + 60
+  const altoCircuito = Math.max(200, ...puntos.map((p) => p.y)) + 60
+
   return (
     <div className="workspace-columna">
       <div className="workspace-toolbar">
-        <button className={`btn-simular${simulando ? ' activo' : ''}`} onClick={() => setSimulando(!simulando)}>
+        <button className={`btn-simular${simulando ? ' activo' : ''}`} onClick={alternarSimulacion}>
           {simulando ? '■ Detener' : '▶ Simular'}
+        </button>
+
+        <button className="btn-eliminar" title="Deshacer (Ctrl+Z)" disabled={!historial.puedeDeshacer} onClick={historial.deshacer}>
+          ↶ Deshacer
+        </button>
+        <button className="btn-eliminar" title="Rehacer (Ctrl+Y)" disabled={!historial.puedeRehacer} onClick={historial.rehacer}>
+          ↷ Rehacer
         </button>
 
         <label>
@@ -485,8 +598,15 @@ const cambiarValorSeleccionado = (valor) => {
           </button>
         )}
 
-        {seleccionado && (
-          <div className="toolbar-seleccion">
+        <button className="btn-eliminar" onClick={() => window.print()}>
+          Imprimir / PDF
+        </button>
+
+        {/* Esta fila está siempre, aunque no haya nada elegido: así el área de trabajo no se corre al seleccionar */}
+        <div className="toolbar-seleccion">
+          {!seleccionado && <span className="toolbar-ayuda">Tocá un componente o un cable para editarlo</span>}
+          {seleccionado && (
+            <>
             {seleccionado.tipo === 'cable' ? (
               <>
                 <span>Cable</span>
@@ -521,6 +641,18 @@ const cambiarValorSeleccionado = (valor) => {
               </label>
             )}
 
+            {seleccionado.tipo === 'potenciometro' && (
+              <input
+                type="range"
+                aria-label="Posición del cursor"
+                min="0"
+                max="1"
+                step="0.01"
+                value={seleccionado.posicion ?? 0.5}
+                onChange={(e) => cambiarPosicionSeleccionado(e.target.value)}
+              />
+            )}
+
             {seleccionado.tipo === 'interruptor' && (
               <button className="btn-eliminar" onClick={() => alternarInterruptor(seleccionado.id)}>
                 {seleccionado.cerrado ? 'Abrir' : 'Cerrar'}
@@ -536,16 +668,22 @@ const cambiarValorSeleccionado = (valor) => {
             <button className="btn-eliminar" onClick={eliminarSeleccionado}>
               Eliminar
             </button>
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </div>
 
       <div
         ref={contenedorRef}
         className={`workspace${simulando ? ' simulando' : ''}`}
+        style={{
+          '--ancho-impresion': `${anchoCircuito}px`,
+          '--alto-impresion': `${altoCircuito}px`,
+          '--zoom-impresion': Math.min(1, HOJA.ancho / anchoCircuito, HOJA.alto / altoCircuito)
+        }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={onDrop}
-        onClick={() => setSeleccionadoId(null)}
+        onPointerDown={() => setSeleccionadoId(null)}
       >
         {componentesColocados.length === 0 && (
           <p className="workspace-mensaje">Arrastrá un componente acá para empezar</p>
@@ -569,6 +707,7 @@ const cambiarValorSeleccionado = (valor) => {
               cable={c}
               seleccionado={c.id === seleccionadoId}
               conError={resaltados.has(c.id)}
+              corriente={simulacion?.estados[c.id]?.corriente}
               onMover={onMover}
               onSeleccionar={() => setSeleccionadoId(c.id)}
             />
@@ -587,8 +726,7 @@ const cambiarValorSeleccionado = (valor) => {
               key={c.id}
               className={clases.join(' ')}
               style={{ left: c.x, top: c.y }}
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => onMouseDownComponente(e, c)}
+              onPointerDown={(e) => onPointerDownComponente(e, c)}
             >
               <Icono rotacion={c.rotacion} cerrado={c.cerrado} presionado={c.id === pulsadoId} estado={estado} />
               <span className="etiqueta-valor">
@@ -752,13 +890,46 @@ function CalculadoraEquivalente({ onAnotar }) {
   )
 }
 
-function PanelCalculos({ notas, setNotas }) {
+// Corrige un circuito contra las condiciones de un ejercicio. Se mira el circuito ya estabilizado:
+// los capacitores, una vez cargados, no conducen, así que se dejan afuera de la cuenta.
+function corregir(ejercicio, circuito) {
+  const estable = circuito.filter((c) => c.tipo !== 'capacitor')
+  return verificar(ejercicio.condiciones, estable, simular(armarRed(estable)))
+}
+
+// La consigna del ejercicio que resuelve este circuito. Cada condición se corrige sola mientras se arma
+function Consigna({ ejercicio, circuito }) {
+  const resultados = corregir(ejercicio, circuito)
+  return (
+    <section className="consigna">
+      <h2>Ejercicio: {ejercicio.titulo}</h2>
+      <p>{ejercicio.consigna}</p>
+      <ul>
+        {resultados.map((r, i) => (
+          <li key={i} className={r.cumple ? 'cumple' : ''}>
+            {r.cumple ? '✓' : '✗'} {textoCondicion(r)}
+            {!r.cumple && (
+              <small>
+                {' '}
+                ({r.medido === null ? `no se pudo medir ${r.componente}` : `ahora: ${formatear(r.medido, MEDIBLES[r.magnitud].unidad)}`})
+              </small>
+            )}
+          </li>
+        ))}
+      </ul>
+      {resultados.every((r) => r.cumple) && <p className="consigna-resuelta">¡Ejercicio resuelto!</p>}
+    </section>
+  )
+}
+
+function PanelCalculos({ notas, setNotas, ejercicio, circuito }) {
   // Agrega la cuenta en una línea nueva, sin pisar lo que el alumno ya escribió
   const anotar = (nota) =>
     setNotas((n) => (n && !n.endsWith('\n') ? n + '\n' : n) + nota + '\n')
 
   return (
     <aside className="panel-calculos">
+      {ejercicio && <Consigna ejercicio={ejercicio} circuito={circuito} />}
       <CalculadoraOhm onAnotar={anotar} />
       <CalculadoraEquivalente onAnotar={anotar} />
 
@@ -769,6 +940,8 @@ function PanelCalculos({ notas, setNotas }) {
           onChange={(e) => setNotas(e.target.value)}
           placeholder="Escribí acá tu razonamiento. Con “Anotar” se agregan los cálculos."
         />
+        {/* El textarea solo imprime lo que entra en su recuadro: para la hoja van las notas completas */}
+        <pre className="solo-impresion">{notas}</pre>
       </section>
     </aside>
   )
@@ -780,22 +953,68 @@ const TEXTO_GUARDADO = {
   error: '⚠ No se pudo guardar, reintentando…'
 }
 
-// La app con la sesión iniciada. El circuito y las notas viven acá (y no en cada panel)
-// para poder guardarlos juntos en el servidor.
-function Simulador({ sesion, onSalir }) {
-  const [circuito, setCircuito] = useState(sesion.trabajo.circuito)
-  const [notas, setNotas] = useState(sesion.trabajo.notas)
-  const estadoGuardado = useAutoguardado(circuito, notas)
+// La app con la sesión iniciada y uno de los circuitos del usuario abierto (sesion.trabajo).
+// El circuito y las notas viven acá (y no en cada panel) para poder guardarlos juntos en el servidor.
+// Al pasar a otro circuito este componente se crea de nuevo (ver key en App): arranca con el historial vacío.
+function Simulador({ sesion, setSesion }) {
+  const { trabajo } = sesion
+  const [circuito, setCircuito, historial] = useHistorial(trabajo.circuito)
+  const [notas, setNotas] = useState(trabajo.notas)
+  const [titulo, setTitulo] = useState(trabajo.nombre)
+  const contenido = { nombre: titulo, circuito, notas }
+  const estadoGuardado = useAutoguardado(trabajo.id, contenido)
+
+  // La lista de circuitos, con el nombre de este al día aunque todavía no se haya guardado
+  const lista = sesion.circuitos.map((c) => (c.id === trabajo.id ? { ...c, nombre: titulo } : c))
+
+  // Agrega un componente sin arrastrarlo (con un click o un toque en la lista), escalonado para que no se tapen
+  const agregar = (tipo) =>
+    setCircuito((prev) => {
+      const corrimiento = (prev.length % 6) * 28
+      return [...prev, crearComponente(tipo, 90 + corrimiento, 70 + corrimiento, prev, COLOR_CABLE)]
+    })
+
+  // Guarda lo último antes de dejar este circuito, por si hubo un cambio en el último segundo
+  const guardar = () => api('PUT', `/api/circuitos/${trabajo.id}`, contenido)
+
+  // Deja este circuito y abre el que devuelva `obtener`: uno que ya existe, uno nuevo o una copia
+  const pasarA = async (obtener) => {
+    try {
+      await guardar()
+      const nuevo = await obtener()
+      const otros = lista.filter((c) => c.id !== nuevo.id)
+      setSesion({ ...sesion, trabajo: nuevo, circuitos: [{ id: nuevo.id, nombre: nuevo.nombre }, ...otros] })
+    } catch (err) {
+      window.alert(err.message)
+    }
+  }
+  const abrir = (id) => pasarA(() => api('GET', `/api/circuitos/${id}`))
+  const crear = (datos) => pasarA(() => api('POST', '/api/circuitos', datos))
+
+  const renombrar = () => {
+    const nuevo = window.prompt('Nombre del circuito', titulo)?.trim()
+    if (nuevo) setTitulo(nuevo.slice(0, 60))
+  }
+
+  const eliminar = async () => {
+    if (!window.confirm(`¿Eliminar "${titulo}"? No se puede recuperar.`)) return
+    try {
+      await api('DELETE', `/api/circuitos/${trabajo.id}`)
+      const resto = lista.filter((c) => c.id !== trabajo.id)
+      setSesion({ ...sesion, circuitos: resto, trabajo: await api('GET', `/api/circuitos/${resto[0].id}`) })
+    } catch (err) {
+      window.alert(err.message)
+    }
+  }
 
   const salir = async () => {
-    // Guarda lo último antes de salir, por si hubo un cambio en el último segundo
     try {
-      await api('PUT', '/api/trabajo', { circuito, notas })
+      await guardar()
     } catch {
       if (!window.confirm('No se pudieron guardar los últimos cambios. ¿Cerrar sesión igual?')) return
     }
     await api('POST', '/api/logout').catch(() => {})
-    onSalir()
+    setSesion(null)
   }
 
   return (
@@ -807,6 +1026,12 @@ function Simulador({ sesion, onSalir }) {
         </div>
         <h1>Simulador de circuitos - E.E.S. Técnica N°1</h1>
         <div className="sesion">
+          <button className="btn-salir btn-circuito" title="Mis circuitos" popoverTarget="mis-circuitos">
+            {titulo}
+          </button>
+          <button className="btn-salir" popoverTarget="ejercicios">
+            Ejercicios
+          </button>
           <span className={`estado-guardado ${estadoGuardado}`}>{TEXTO_GUARDADO[estadoGuardado]}</span>
           <strong>{sesion.usuario}</strong>
           <button className="btn-salir" onClick={salir}>
@@ -816,16 +1041,54 @@ function Simulador({ sesion, onSalir }) {
       </header>
 
       <div className="app-body">
-        <PanelComponentes />
-        <Workspace componentesColocados={circuito} setComponentesColocados={setCircuito} />
-        <PanelCalculos notas={notas} setNotas={setNotas} />
+        <PanelComponentes onAgregar={agregar} />
+        <Workspace componentesColocados={circuito} setComponentesColocados={setCircuito} historial={historial} />
+        <PanelCalculos notas={notas} setNotas={setNotas} ejercicio={trabajo.ejercicio} circuito={circuito} />
       </div>
+
+      {/* Paneles que se abren desde el encabezado. El navegador los cierra solo al tocar afuera o con Esc (popover) */}
+      <div id="mis-circuitos" popover="auto" className="panel-flotante">
+        <h2>Mis circuitos</h2>
+        <ul className="lista-circuitos">
+          {lista.map((c) => (
+            <li key={c.id}>
+              <button disabled={c.id === trabajo.id} onClick={() => abrir(c.id)}>
+                {c.nombre}
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="panel-acciones">
+          <button className="btn-simular" onClick={() => crear({ nombre: `Circuito ${lista.length + 1}` })}>
+            + Nuevo
+          </button>
+          <button className="btn-eliminar" onClick={renombrar}>
+            Renombrar
+          </button>
+          <button className="btn-eliminar" onClick={() => crear({ nombre: `${titulo} (copia)`.slice(0, 60), circuito, notas })}>
+            Duplicar
+          </button>
+          <button className="btn-eliminar" disabled={lista.length < 2} onClick={eliminar}>
+            Eliminar
+          </button>
+        </div>
+      </div>
+
+      <Ejercicios
+        sesion={sesion}
+        corregir={corregir}
+        onResolver={(ej) => crear({ nombre: ej.titulo, ejercicioId: ej.id })}
+        onAbrirCopia={(ej, entrega) =>
+          crear({ nombre: `${ej.titulo} - ${entrega.usuario}`.slice(0, 60), circuito: entrega.circuito, notas: entrega.notas })
+        }
+      />
     </div>
   )
 }
 
 function App() {
-  // undefined: todavía se está preguntando al servidor; null: no hay sesión; objeto: usuario y su trabajo
+  // undefined: todavía se está preguntando al servidor; null: no hay sesión;
+  // objeto: el usuario, la lista de sus circuitos y el que tiene abierto (trabajo)
   const [sesion, setSesion] = useState(undefined)
 
   useEffect(() => {
@@ -834,7 +1097,7 @@ function App() {
 
   if (sesion === undefined) return <p className="cargando">Cargando…</p>
   if (sesion === null) return <Acceso onIngresar={setSesion} />
-  return <Simulador sesion={sesion} onSalir={() => setSesion(null)} />
+  return <Simulador key={sesion.trabajo.id} sesion={sesion} setSesion={setSesion} />
 }
 
 export default App

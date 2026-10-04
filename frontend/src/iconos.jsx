@@ -24,6 +24,30 @@ export function IconoResistencia({ rotacion = 0 }) {
   )
 }
 
+// Resistencia variable: la flecha que la cruza indica que su valor se regula
+export function IconoPotenciometro({ rotacion = 0 }) {
+  return (
+    <svg width="40" height="20" viewBox="0 0 40 20" style={girar(rotacion)}>
+      <line x1="0" y1="10" x2="6" y2="10" stroke={ROJO} strokeWidth="2" />
+      <polyline points="6,10 9,4 15,16 21,4 27,16 33,4 34,10" fill="none" stroke={ROJO} strokeWidth="2" />
+      <line x1="34" y1="10" x2="40" y2="10" stroke={ROJO} strokeWidth="2" />
+      <path d="M10 19 L30 1 M24 2 L30 1 L28 7" fill="none" stroke={GRIS} strokeWidth="1.5" />
+    </svg>
+  )
+}
+
+// Dos placas enfrentadas, sin polaridad
+export function IconoCapacitor({ rotacion = 0 }) {
+  return (
+    <svg width="28" height="16" viewBox="0 0 28 16" style={girar(rotacion)}>
+      <line x1="0" y1="8" x2="11" y2="8" stroke={GRIS} strokeWidth="2" />
+      <line x1="17" y1="8" x2="28" y2="8" stroke={GRIS} strokeWidth="2" />
+      <line x1="11" y1="1" x2="11" y2="15" stroke={ROJO} strokeWidth="2.5" />
+      <line x1="17" y1="1" x2="17" y2="15" stroke={ROJO} strokeWidth="2.5" />
+    </svg>
+  )
+}
+
 export function IconoCable() {
   return (
     <svg width="28" height="16" viewBox="0 0 28 16">

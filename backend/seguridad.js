@@ -32,6 +32,10 @@ export async function verificarContrasena(contrasena, guardado) {
   return timingSafeEqual(calculado, esperado)
 }
 
+// Compara dos textos tardando siempre lo mismo (se comparan sus hashes, que miden igual aunque los textos no)
+export const mismoTexto = (a, b) =>
+  timingSafeEqual(createHash('sha256').update(a).digest(), createHash('sha256').update(b).digest())
+
 // Token de sesión: 32 bytes al azar. El navegador guarda el token; la base guarda solo su hash,
 // así alguien que llegue a leer la base no puede usar las sesiones de otros.
 export const crearToken = () => randomBytes(32).toString('base64url')

@@ -74,6 +74,13 @@ export default function Acceso({ onIngresar }) {
         </label>
         {esRegistro && <p className="acceso-ayuda">Mínimo 8 caracteres.</p>}
 
+        {esRegistro && (
+          <label className="acceso-campo">
+            Código de docente (dejalo vacío si sos alumno)
+            <input name="codigoDocente" maxLength={200} autoComplete="off" />
+          </label>
+        )}
+
         {error && (
           <p className="ohm-error" role="alert">
             {error}

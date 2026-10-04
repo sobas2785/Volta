@@ -1,6 +1,6 @@
 // Verificación rápida del simulador. Correr con: node src/simulador.check.js
 import assert from 'node:assert/strict'
-import { simular, formatear } from './simulador.js'
+import { simular, formatear, verificar, textoCondicion, PASO } from './simulador.js'
 
 const cerca = (real, esperado, texto) =>
   assert.ok(Math.abs(real - esperado) <= Math.abs(esperado) * 0.001 + 1e-6, `${texto}: ${real} en vez de ${esperado}`)
@@ -70,6 +70,39 @@ cerca(conInterruptor(true).estados.L1.brillo, 1, 'lámpara con interruptor cerra
 // Dos fuentes distintas en paralelo
 r = simular({ cantidadNodos: 2, elementos: [fuente([0, 1]), { ...fuente([0, 1], 9), id: 'V2', nombre: 'V2' }] })
 assert.match(r.cortocircuito.mensaje, /dos fuentes/)
+
+// Potenciómetro de 1 kΩ con el cursor al 25%: se comporta como una resistencia de 250 Ω
+r = simular({ cantidadNodos: 2, elementos: [fuente([0, 1]), el('RV1', 'potenciometro', [0, 1], { valor: 1000, posicion: 0.25 })] })
+cerca(r.estados.RV1.corriente, 12 / 250, 'corriente en el potenciómetro')
+
+// Capacitor de 1000 µF cargándose por 1 kΩ: al segundo (una constante de tiempo) llega al 63% de la fuente
+const redRC = { cantidadNodos: 3, elementos: [fuente([0, 2]), el('R1', 'resistencia', [0, 1], { valor: 1000 }), el('C1', 'capacitor', [1, 2], { valor: 1000 })] }
+let cargas = {}
+for (let t = 0; t < 1; t += PASO) cargas = { C1: simular(redRC, cargas).estados.C1.tension }
+assert.ok(Math.abs(cargas.C1 - 12 * (1 - Math.exp(-1))) < 0.25, `capacitor a 1 s: ${cargas.C1} V`)
+// Cargado del todo ya no deja pasar corriente, y eso no se avisa como circuito abierto
+for (let t = 0; t < 20; t += PASO) cargas = { C1: simular(redRC, cargas).estados.C1.tension }
+r = simular(redRC, cargas)
+cerca(r.estados.C1.tension, 12, 'capacitor cargado')
+assert.equal(r.avisos.length, 0)
+
+// Corrección de un ejercicio sobre el divisor 100 Ω + 200 Ω: en R2 caen 8 V y circulan 40 mA
+const divisor = [fuente([0, 2]), el('R1', 'resistencia', [0, 1], { valor: 100 }), el('R2', 'resistencia', [2, 1], { valor: 200 })]
+const corregido = verificar(
+  [
+    { componente: 'r2', magnitud: 'tension', valor: 8 },
+    { componente: 'R2', magnitud: 'corriente', valor: 0.041 },
+    { componente: 'R1', magnitud: 'tension', valor: 8 },
+    { componente: 'R9', magnitud: 'tension', valor: 8 }
+  ],
+  divisor,
+  simular({ cantidadNodos: 3, elementos: divisor })
+)
+// Cumplen: R2 conectada al revés (no importa el signo) y 40 mA contra 41 mA (dentro del 5%).
+// No cumplen: R1 tiene 4 V, y R9 no existe.
+assert.deepEqual(corregido.map((c) => c.cumple), [true, true, false, false])
+assert.equal(corregido[3].medido, null)
+assert.equal(textoCondicion(corregido[1]), 'Corriente en R2 = 41 mA')
 
 assert.equal(formatear(0.0213, 'A'), '21.3 mA')
 assert.equal(formatear(12, 'V'), '12 V')

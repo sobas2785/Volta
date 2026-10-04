@@ -18,10 +18,15 @@ const POTENCIA_LAMPARA = 6 // W: brilla al 100% con 6 W y se quema con el doble
 const CORRIENTE_MOTOR = 0.5 // A: con esta corriente gira a velocidad máxima
 const CORRIENTE_CORTO = 50 // A: más que esto por una fuente se toma como cortocircuito
 const CORRIENTE_NULA = 1e-5 // A: menos que esto es que no circula corriente
+// Segundos que avanza cada paso de la simulación cuando hay capacitores (que se cargan con el tiempo)
+export const PASO = 0.05
 
-const TIENE_RESISTENCIA = ['resistencia', 'lampara', 'motor']
+const TIENE_RESISTENCIA = ['resistencia', 'lampara', 'motor', 'potenciometro']
 
 const nombreDe = (el) => el.nombre || el.tipo
+
+// La resistencia del potenciómetro depende de dónde está su cursor (posicion, de 0 a 1)
+const resistenciaDe = (el) => (el.tipo === 'potenciometro' ? el.valor * (el.posicion ?? 0.5) : el.valor)
 
 // Elementos que unen sus dos puntas sin resistencia: son los que pueden formar un cortocircuito
 function conduceSinResistencia(el, abiertos) {
@@ -36,22 +41,24 @@ function conduceSinResistencia(el, abiertos) {
     case 'pulsador':
       return Boolean(el.presionado)
     default:
-      return TIENE_RESISTENCIA.includes(el.tipo) && el.valor <= 0
+      return TIENE_RESISTENCIA.includes(el.tipo) && resistenciaDe(el) <= 0
   }
 }
 
 // Cómo entra cada elemento en la cuenta: la corriente que lo atraviesa (del nodo 0 al 1) es
 // I = g · (V0 − V1 − e), con g su conductancia (1/R) y e su "empuje" (la tensión de una fuente o
 // la caída de un diodo). Devuelve null si el elemento no conduce.
-function modelo(el, encendidos, abiertos) {
+function modelo(el, encendidos, abiertos, cargas) {
   if (abiertos.has(el.id)) return null
+  // Capacitor: en cada paso deja pasar I = C/PASO · (tensión de ahora − tensión del paso anterior)
+  if (el.tipo === 'capacitor') return el.valor > 0 ? { g: (el.valor * 1e-6) / PASO, e: cargas[el.id] ?? 0 } : null
   if (el.tipo === 'fuente') return { g: 1 / R_CASI_CERO, e: el.valor }
   if (el.tipo === 'voltimetro') return { g: 1 / R_VOLTIMETRO, e: 0 }
   if (DIODOS[el.tipo]) {
     const { resistencia, caida } = DIODOS[el.tipo]
     return encendidos.has(el.id) ? { g: 1 / resistencia, e: caida } : null
   }
-  if (TIENE_RESISTENCIA.includes(el.tipo)) return { g: 1 / Math.max(el.valor, R_CASI_CERO), e: 0 }
+  if (TIENE_RESISTENCIA.includes(el.tipo)) return { g: 1 / Math.max(resistenciaDe(el), R_CASI_CERO), e: 0 }
   return conduceSinResistencia(el, abiertos) ? { g: 1 / R_CASI_CERO, e: 0 } : null
 }
 
@@ -147,7 +154,9 @@ function excedeLimite(el, tension, corriente) {
 // Resultado: { cortocircuito: { mensaje, ids } | null, avisos: [{ mensaje, ids }], estados: { [id]: {...} } }
 // Cada estado tiene tension, corriente y abierto (quemado o fundido); lámparas y LEDs suman brillo (0 a 1)
 // y los motores giro (-1 a 1). Los ids sirven para marcar en rojo dónde está el problema.
-export function simular({ cantidadNodos, elementos }) {
+// cargas: la tensión que tenía cada capacitor en el paso anterior ({ [id]: volts }); sin cargas arrancan descargados.
+// Para avanzar en el tiempo, se vuelve a llamar pasando la tensión de cada capacitor que devolvió el paso anterior.
+export function simular({ cantidadNodos, elementos }, cargas = {}) {
   const fuentes = elementos.filter((el) => el.tipo === 'fuente')
   if (fuentes.length === 0) {
     return { cortocircuito: null, avisos: [{ mensaje: 'Agregá una fuente para simular el circuito.', ids: [] }], estados: {} }
@@ -169,7 +178,7 @@ export function simular({ cantidadNodos, elementos }) {
       continue
     }
 
-    const conModelo = elementos.map((el) => ({ el, rama: modelo(el, encendidos, abiertos) }))
+    const conModelo = elementos.map((el) => ({ el, rama: modelo(el, encendidos, abiertos, cargas) }))
     const ramas = conModelo.filter((x) => x.rama).map(({ el, rama }) => ({ nodos: el.nodos, ...rama }))
     const v = resolver(cantidadNodos, ramas)
 
@@ -218,8 +227,10 @@ export function simular({ cantidadNodos, elementos }) {
       }
     }
 
-    // Si algo se quemó o se fundió, ese aviso ya explica por qué no circula corriente
-    if (abiertos.size === 0 && fuentes.every((f) => Math.abs(estados[f.id].corriente) < CORRIENTE_NULA)) {
+    // Si algo se quemó o se fundió, ese aviso ya explica por qué no circula corriente.
+    // Con capacitores tampoco se avisa: es normal que la corriente se corte cuando terminan de cargarse.
+    const hayCapacitores = elementos.some((el) => el.tipo === 'capacitor')
+    if (abiertos.size === 0 && !hayCapacitores && fuentes.every((f) => Math.abs(estados[f.id].corriente) < CORRIENTE_NULA)) {
       avisos.push({ mensaje: 'No circula corriente: el circuito está abierto en algún punto.', ids: [] })
     }
 
@@ -242,4 +253,27 @@ export function formatear(numero, unidad) {
   if (abs < 1e-9) return `0 ${unidad}`
   const [factor, prefijo] = abs >= 1e3 ? [1e-3, 'k'] : abs >= 1 ? [1, ''] : abs >= 1e-3 ? [1e3, 'm'] : [1e6, 'µ']
   return `${parseFloat((numero * factor).toPrecision(3))} ${prefijo}${unidad}`
+}
+
+// Lo que un ejercicio puede pedir sobre un componente
+export const MEDIBLES = {
+  tension: { nombre: 'Tensión', unidad: 'V' },
+  corriente: { nombre: 'Corriente', unidad: 'A' }
+}
+
+// "Tensión en R2 = 8 V"
+export const textoCondicion = ({ componente, magnitud, valor }) =>
+  `${MEDIBLES[magnitud].nombre} en ${componente} = ${formatear(valor, MEDIBLES[magnitud].unidad)}`
+
+// Corrección de un ejercicio: para cada condición ({ componente, magnitud, valor }) busca el componente por su
+// nombre y compara lo que dio la simulación con lo pedido, sin importar el signo (para qué lado quedó conectado).
+// Devuelve las condiciones con lo medido (null si no se pudo medir) y si se cumple.
+// ponytail: tolerancia fija del 5%; que la elija el docente si hiciera falta
+export function verificar(condiciones, elementos, { estados }) {
+  return condiciones.map((c) => {
+    const el = elementos.find((e) => e.nombre?.trim().toLowerCase() === c.componente.toLowerCase())
+    const medido = el && estados[el.id] ? Math.abs(estados[el.id][c.magnitud]) : null
+    const pedido = Math.abs(c.valor)
+    return { ...c, medido, cumple: medido !== null && Math.abs(medido - pedido) <= pedido * 0.05 + 1e-9 }
+  })
 }

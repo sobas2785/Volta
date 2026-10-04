@@ -152,6 +152,7 @@ html, body, #root {
   background-size: 24px 24px;
   background-color: var(--blanco);
   overflow: hidden;
+  touch-action: none;
 }
 
 .workspace-mensaje {
@@ -219,13 +220,25 @@ html, body, #root {
   cursor: pointer;
 }
 
+/* Opciones del elemento elegido: una fila propia, que está siempre para que el área de trabajo no se corra */
 .toolbar-seleccion {
-  margin-left: auto;
+  flex-basis: 100%;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-left: 12px;
-  border-left: 1px solid var(--gris-medio);
+  min-height: 26px;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+/* Si no entran en el ancho se desplazan de costado, en vez de pasar a otro renglón */
+.toolbar-seleccion > * {
+  flex: none;
+}
+
+.toolbar-ayuda {
+  color: var(--gris-medio);
 }
 
 .toolbar-seleccion input[type='color'] {
@@ -251,9 +264,36 @@ html, body, #root {
   color: var(--blanco);
 }
 
+.btn-eliminar:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 .linea-cable {
   cursor: pointer;
   pointer-events: auto;
+}
+
+/* Franja invisible sobre cada cable, más ancha que la línea, para agarrarlo sin tanta puntería */
+.zona-toque {
+  stroke: transparent;
+  stroke-width: 16;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+/* Corriente circulando: rayitas claras que avanzan por el cable */
+@keyframes circular {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+
+.corriente {
+  stroke: var(--blanco);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 8;
+  animation: circular 1s linear infinite;
 }
 
 .componente-colocado.seleccionado {
@@ -537,6 +577,7 @@ html, body, #root {
 @media (prefers-reduced-motion: reduce) {
   .componente-colocado.con-error,
   .linea-cable.con-error,
+  .corriente,
   .motor-girando {
     animation: none;
   }
@@ -693,4 +734,362 @@ html, body, #root {
 .acceso-enviar:disabled {
   cursor: wait;
   opacity: 0.6;
+}
+
+/* Con el dedo, las puntas de los cables tienen una zona de agarre más grande que lo que se ve */
+@media (pointer: coarse) {
+  .extremo-cable {
+    stroke: transparent;
+    stroke-width: 18;
+  }
+}
+
+/* Pantallas angostas (celular, tablet vertical): todo en una columna y la página se desplaza */
+@media (max-width: 900px) {
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .app-header {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+
+  .app-header h1 {
+    display: none;
+  }
+
+  .marca {
+    width: auto;
+  }
+
+  .sesion {
+    margin-left: auto;
+    padding: 8px 0;
+  }
+
+  .app-body {
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+  }
+
+  .panel-componentes {
+    display: flex;
+    gap: 8px;
+    padding: 8px 14px;
+    border-right: none;
+    border-bottom: 1px solid var(--gris-medio);
+    overflow-x: auto;
+  }
+
+  .panel-componentes h2 {
+    display: none;
+  }
+
+  .componente-item {
+    flex: none;
+    margin-bottom: 0;
+  }
+
+  .workspace {
+    flex: none;
+    height: 62vh;
+  }
+
+  .panel-calculos {
+    border-top: 1px solid var(--gris-medio);
+    border-left: none;
+    overflow: visible;
+  }
+}
+
+/* Lo que solo aparece en la hoja impresa */
+.solo-impresion {
+  display: none;
+}
+
+/* Imprimir o guardar como PDF: queda el encabezado, el circuito completo y las notas */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 12mm;
+  }
+
+  html, body, #root, .app-shell {
+    height: auto;
+    background: var(--blanco);
+  }
+
+  /* El logo es blanco: sin el fondo del encabezado no se vería */
+  .app-header {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .panel-componentes,
+  .workspace-toolbar,
+  .workspace-mensaje,
+  .estado-guardado,
+  .btn-salir:not(.btn-circuito),
+  .panel-calculos section:not(.bloc-notas),
+  .bloc-notas textarea {
+    display: none;
+  }
+
+  .solo-impresion {
+    display: block;
+  }
+
+  .app-body,
+  .workspace-columna {
+    display: block;
+    overflow: visible;
+  }
+
+  /* El área de trabajo toma el tamaño del circuito y se achica si no entra en la hoja (ver Workspace) */
+  .workspace {
+    width: var(--ancho-impresion);
+    height: var(--alto-impresion);
+    zoom: var(--zoom-impresion);
+    background: none;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .componente-colocado.seleccionado {
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  .panel-calculos {
+    padding: 14px 0;
+    border: none;
+    overflow: visible;
+  }
+
+  .bloc-notas pre {
+    margin: 0;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+  }
+}
+
+/* El botón del encabezado con el nombre del circuito abierto: abre "Mis circuitos" */
+.btn-circuito {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.btn-circuito::after {
+  content: ' ▾';
+}
+
+/* Paneles que se abren sobre la página (Mis circuitos, Ejercicios) */
+.panel-flotante {
+  width: min(520px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  padding: 20px;
+  border: none;
+  border-top: 5px solid var(--rojo-institucional);
+  border-radius: 8px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  font-size: 13px;
+}
+
+.panel-flotante::backdrop {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.panel-flotante h2 {
+  margin: 0 0 10px;
+  color: var(--bordo-oscuro);
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.panel-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.lista-circuitos {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 50vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.lista-circuitos button {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--gris-claro);
+  border-radius: 6px;
+  background: var(--gris-claro);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lista-circuitos button:hover {
+  border-color: var(--rojo-secundario);
+  background: var(--rojo-claro-acento);
+}
+
+/* El que está abierto */
+.lista-circuitos button:disabled {
+  border-color: var(--rojo-institucional);
+  background: var(--blanco);
+  color: var(--bordo-oscuro);
+  font-weight: 600;
+  cursor: default;
+}
+
+/* Ejercicios: en el panel flotante y, al resolver uno, arriba del panel de cálculos */
+.ejercicio {
+  padding: 10px 0;
+  border-top: 1px solid var(--gris-claro);
+}
+
+.ejercicio h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.ejercicio h3 small {
+  color: var(--gris-medio);
+  font-weight: 400;
+}
+
+.ejercicio p,
+.consigna p {
+  margin: 6px 0;
+  white-space: pre-wrap;
+}
+
+.ejercicio ul,
+.consigna ul {
+  margin: 6px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.consigna {
+  font-size: 13px;
+}
+
+.consigna li {
+  padding: 3px 0;
+  color: var(--rojo-institucional);
+}
+
+.consigna li.cumple {
+  color: #1E7A3C;
+}
+
+.consigna li small {
+  color: var(--gris-medio);
+}
+
+.consigna-resuelta {
+  padding: 6px;
+  border-radius: 4px;
+  background: #DDF2E3;
+  color: #1E7A3C;
+  font-weight: 600;
+  text-align: center;
+}
+
+.tabla-entregas {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tabla-entregas th,
+.tabla-entregas td {
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--gris-claro);
+  text-align: left;
+}
+
+.resuelto {
+  color: #1E7A3C;
+  font-weight: 600;
+}
+
+/* Formulario del docente para cargar un ejercicio */
+.nuevo-ejercicio {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 2px solid var(--rojo-suave-acento);
+}
+
+.nuevo-ejercicio input,
+.nuevo-ejercicio textarea,
+.nuevo-ejercicio select {
+  padding: 5px 8px;
+  border: 1px solid var(--gris-medio);
+  border-radius: 4px;
+  font: inherit;
+}
+
+.nuevo-ejercicio textarea {
+  min-height: 60px;
+  resize: vertical;
+}
+
+.condicion {
+  display: grid;
+  grid-template-columns: 1fr 1fr 80px 16px 22px;
+  align-items: center;
+  gap: 6px;
+}
+
+.condicion input {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .sesion {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    padding: 8px 0 8px 10px;
+  }
+
+  .btn-circuito {
+    max-width: 140px;
+  }
+}
+
+@media print {
+  /* En la hoja queda el nombre del circuito, sin aspecto de botón */
+  .btn-circuito {
+    display: inline;
+    border: none;
+    padding: 0;
+    font-size: 13px;
+  }
+
+  .btn-circuito::after {
+    content: ' ·';
+  }
+
+  .panel-calculos section.consigna {
+    display: block;
+  }
 }
