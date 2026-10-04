@@ -52,6 +52,18 @@ Después abrir <http://localhost:5173>. En desarrollo, Vite reenvía los pedidos
 Para poder crear cuentas de docente, el backend tiene que arrancar con la variable de entorno
 `CLAVE_DOCENTE`: ese es el código que se escribe al crear la cuenta (ver [backend/README.md](backend/README.md)).
 
+## Cuentas de prueba
+
+Para probar Volta sin registrarse, hay una cuenta de cada rol:
+
+| Rol | Usuario | Contraseña |
+|---|---|---|
+| Alumno | `alumno` | `alumno123` |
+| Docente | `docente` | `docente123` |
+
+La base de datos no se sube al repositorio: en una instalación nueva estas cuentas todavía no existen
+y hay que crearlas una vez desde "Crear cuenta" (la de docente, con el código de `CLAVE_DOCENTE`).
+
 ## Estructura
 
 | Carpeta | Qué tiene |
